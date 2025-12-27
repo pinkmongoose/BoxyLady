@@ -1,13 +1,13 @@
 //============================================================================
 // Name        : BoxyLady
 // Author      : Darren Green
-// Copyright   : (C) Darren Green 2011-2020
+// Copyright   : (C) Darren Green 2011-2025
 // Description : Music sequencer
 //
 // License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
 // This is free software; you are free to change and redistribute it.
 // There is NO WARRANTY, to the extent permitted by law.
-// Contact: darren.green@stir.ac.uk http://www.pinkmongoose.co.uk
+// Contact: darren.green@stir.ac.uk http://pinkmongoose.co.uk
 //============================================================================
 
 #ifndef TUNING_H_
@@ -21,141 +21,95 @@
 #include <map>
 #include <bitset>
 
-#include "Fraction.h"
 #include "Blob.h"
-#include "Envelope.h"
-#include "Builders.h"
 
 namespace BoxyLady {
 
 class PitchGamut;
-class NoteValue;
 class NoteDuration;
 
-typedef std::vector<double> DoubleVector;
-typedef std::vector<int> IntVector;
-typedef std::vector<std::string> StringVector;
-typedef std::map<std::string, DoubleVector> DVMap;
-
-NoteDuration BuildNoteDuration(Blob&);
+using FloatVector = std::vector<float_type>;
+using IntVector = std::vector<int>;
+using StringVector = std::vector<std::string>;
+using FloatVectorMap = std::map<std::string, FloatVector>;
 
 class NoteValue {
 private:
-	int number_;
-	double accidental_;
-	int octave_;
+	int number_ {0};
+	float_type accidental_ {0.0};
+	int octave_ {4};
 public:
 	friend class PitchGamut;
-	NoteValue(int number, double accidental, int octave) :
-			number_(number), accidental_(accidental), octave_(octave) {
+	NoteValue(int number, float_type accidental, int octave) noexcept :
+			number_{number}, accidental_{accidental}, octave_{octave} {
 	}
-	NoteValue() :
-			number_(0), accidental_(0.0), octave_(4) {
-	}
-	void setOctave(int octave) {
+	NoteValue() = default;
+	void setOctave(int octave) noexcept {
 		octave_ = octave;
 	}
 	std::string toString() const {
-		std::ostringstream S;
-		S << number_ << " " << accidental_ << " " << octave_;
-		return S.str();
+		std::ostringstream stream;
+		std::print(stream, "{} {} {}", number_, accidental_, octave_);
+		return stream.str();
 	}
 };
 
 class PitchGamut {
 private:
-	StringVector note_names_;
-	int pitch_classes_n_;
-	double repeat_ratio_;
-	DoubleVector note_values_;
-	DVMap accidentals_;
-	DoubleVector pitches_;
-	double standard_pitch_;
+	StringVector note_names_ {};
+	size_t pitch_classes_n_ {0};
+	float_type repeat_ratio_ {2.0}, standard_pitch_ {1.0};
+	FloatVector note_values_ {}, pitches_ {}, key_signature_ {};
+	FloatVectorMap accidentals_ {};
 	PitchGamut& Clear();
 	int NearestOctave(const NoteValue, const NoteValue) const;
-	DoubleVector& Accidental(std::string);
-	double FreqMultFromNote(NoteValue);
-	double FreqMultFromRank(int, double);
-	PitchGamut& StandardPitch(std::string = "a''''", double = 1.0);
-	void StandardAccidentals(double);
-	PitchGamut& EqualTemper(double);
-	PitchGamut& GeneralNotes(int, DoubleVector, StringVector, double);
-	PitchGamut& GeneralET(int, DoubleVector, double, double, StringVector,
-			std::string = "a''''", double spf = 1.0);
-	PitchGamut& MeantoneNotes(int, int);
-	PitchGamut& TwotoneNotes(int, int, int);
-	PitchGamut& PorcupineNotes(int, int);
-	PitchGamut& ETWestern(int, DoubleVector, double, double = 2.0);
-	PitchGamut& Regular(double, int, std::string, double);
-	PitchGamut& MeantoneRegular(double, std::string, double);
-	PitchGamut& RegularWestern(int, DoubleVector, double, double, int,
-			std::string = "c");
-	PitchGamut& GeneralRegular(int, DoubleVector, double, StringVector, double,
-			int, std::string = "c", double = 2.0, std::string = "a''''",
-			double spf = 1.0);
-	PitchGamut& Generator(double, double, int, int, int);
+	FloatVector& Accidental(std::string);
+	float_type FreqMultFromRank(int, float_type);
+	PitchGamut& StandardPitch(std::string = "a''''", float_type = 1.0);
+	void StandardAccidentals(float_type);
+	PitchGamut& EqualTemper(float_type);
+	PitchGamut& GeneralNotes(size_t, FloatVector, StringVector, float_type);
+	PitchGamut& GeneralET(size_t, FloatVector, float_type, float_type, StringVector, std::string = "a''''", float_type spf = 1.0);
+	PitchGamut& MeantoneNotes(size_t, size_t);
+	PitchGamut& TwotoneNotes(size_t, size_t, size_t);
+	PitchGamut& ETWestern(size_t, FloatVector, float_type, float_type = 2.0);
+	PitchGamut& Regular(float_type, int, std::string, float_type);
+	PitchGamut& MeantoneRegular(float_type, std::string, float_type);
+	PitchGamut& RegularWestern(size_t, FloatVector, float_type, float_type, int, std::string = "c");
+	PitchGamut& GeneralRegular(size_t, FloatVector, float_type, StringVector, float_type,
+			int, std::string = "c", float_type = 2.0, std::string = "a''''", float_type spf = 1.0);
+	PitchGamut& Generator(float_type, float_type, int, int, int);
 	PitchGamut& NormalisePitches();
 	PitchGamut& RotatePitches(int);
-	PitchGamut& General12(DoubleVector, std::string);
-	double PitchIndex(NoteValue);
-	double PitchIndex(std::string name) {
-		return PitchIndex(Note(name));
+	PitchGamut& General12(FloatVector, std::string);
+	float_type PitchIndex(NoteValue);
+	float_type PitchIndex(std::string name) {
+		return PitchIndex(NoteAbsolute(name));
 	}
-	void List1(int);
 public:
-	PitchGamut() {
-		Clear();
-	}
 	PitchGamut& TuningBlob(Blob&, bool);
 	PitchGamut& ParseBlob(Blob&, bool);
-	NoteValue Note(std::string);
-	NoteValue Note(std::string, const NoteValue);
-	NoteValue Offset(NoteValue, int, double, int) const;
-	double FreqMultStandard(NoteValue);
+	NoteValue NoteAbsolute(std::string);
+	NoteValue NoteRelative(std::string, const NoteValue);
+	NoteValue Offset(NoteValue, int, float_type, int) const;
+	float_type FreqMultFromNote(NoteValue);
+	float_type FreqMultStandard(NoteValue);
 	void List(Blob&);
 	PitchGamut& TET10();
 	PitchGamut& TET12() {
 		return MeantoneNotes(2, 1).EqualTemper(2.0).StandardPitch();
 	}
 	PitchGamut& TET14();
-	PitchGamut& TET15() {
-		return TwotoneNotes(3, 2, 1).EqualTemper(2.0).StandardPitch();
-	}
-	PitchGamut& TET19() {
-		return MeantoneNotes(3, 2).EqualTemper(2.0).StandardPitch();
-	}
-	PitchGamut& TET22() {
-		return TwotoneNotes(4, 3, 2).EqualTemper(2.0).StandardPitch();
-	}
-	;
-	PitchGamut& TET31() {
-		return MeantoneNotes(5, 3).EqualTemper(2.0).StandardPitch();
-	}
 	PitchGamut& Pelog();
 	PitchGamut& Slendro();
-	PitchGamut& Pythagorean12(std::string base_note) {
-		return MeantoneNotes(2, 1).MeantoneRegular(3.0 / 2.0, base_note, 2.0);
-	}
-	PitchGamut& QuarterComma12(std::string base_note) {
-		return MeantoneNotes(2, 1).MeantoneRegular(pow(5.0, 0.25), base_note,
-				2.0);
-	}
-	PitchGamut& Harrison12(std::string base_note) {
-		return MeantoneNotes(2, 1).MeantoneRegular(1.494412, base_note, 2.0);
-	}
 	PitchGamut& Harmonic12(std::string);
 	PitchGamut& Ptolemy12(std::string);
 	PitchGamut& BPLambda();
-	PitchGamut& WCAlpha_old();
-	PitchGamut& WCBeta_old() {
-		return MeantoneNotes(3, 2).EqualTemper(pow(1.5, 19.0 / 11.0)).StandardPitch();
-	}
-	PitchGamut& WCGamma_old();
 	PitchGamut& WCAlpha();
 	PitchGamut& WCBeta();
 	PitchGamut& WCGamma();
 };
 
-}
+} //end namespace BoxyLady
 
 #endif /* TUNING_H_ */

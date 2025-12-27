@@ -1,111 +1,65 @@
 //============================================================================
 // Name        : BoxyLady
 // Author      : Darren Green
-// Copyright   : (C) Darren Green 2011-2020
+// Copyright   : (C) Darren Green 2011-2025
 // Description : Music sequencer
 //
 // License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
 // This is free software; you are free to change and redistribute it.
 // There is NO WARRANTY, to the extent permitted by law.
-// Contact: darren.green@stir.ac.uk http://www.pinkmongoose.co.uk
+// Contact: darren.green@stir.ac.uk http://pinkmongoose.co.uk
 //============================================================================
 
+#include <set>
+#include <map>
 #include "Blob.h"
 
 namespace BoxyLady {
 
-bool Blob::isWhitespace(char c) const {
-	if (c < 33)
-		return true;
-	else if (c == 127)
-		return true;
-	else
-		return false;
+bool Blob::isWhitespace(char c) const noexcept {
+	if (c < 33) return true;
+	else if (c == 127) return true;
+	else return false;
 }
 
-char Blob::MatchingDelimiter(char c) const {
+char Blob::MatchingDelimiter(char c) const noexcept {
+	static std::map<char, char> delimiters {{'(',')'}, {'<','>'}, {'{','}'}, {'[',']'}, {'"','"'}, {ascii::STX, ascii::ETX}};
+	if (delimiters.contains(c)) return delimiters[c];
+	else return 0;
+}
+
+int Blob::DelimiterSign(char c) const noexcept {
+	const std::set<char> opener {'(','<','{','"',ascii::STX,'['}, closer {')','>','}','"',ascii::ETX,']'};
+	if (opener.contains(c)) return 1;
+	else if (closer.contains(c)) return -1;
+	else return 0;
+}
+
+bool Blob::isAutoChar(char c) const noexcept {
 	switch (c) {
-	case '(':
-		return ')';
-	case '<':
-		return '>';
-	case '{':
-		return '}';
-	case '[':
-		return ']';
-	case '"':
-		return '"';
-	case ascii::STX:
-		return ascii::ETX;
-	default:
-		return 0;
+	case '@': return true;
+	default: return false;
 	}
 }
 
-bool Blob::isAutoChar(char c) const {
-	switch (c) {
-	case '@':
-		return true;
-	default:
-		return false;
-	}
-}
-
-int Blob::DelimiterSign(char c) const {
-	switch (c) {
-	case '(':
-		;
-		/*no break*/case '<':
-		;
-		/*no break*/case '{':
-		;
-		/*no break*/case '"':
-		;
-		/*no break*/case ascii::STX:
-		;
-		/*no break*/case '[':
-		return 1;
-	case ')':
-		;
-		/*no break*/case '>':
-		;
-		/*no break*/case '}':
-		;
-		/*no break*/case ']':
-		;
-		/*no break*/case ascii::ETX:
-		return -1;
-	default:
-		return 0;
-	}
-}
-
-bool Blob::isTokenChar(char c) const {
-	if (isWhitespace(c))
-		return false;
-	if (DelimiterSign(c))
-		return false;
-	return true;
+bool Blob::isTokenChar(char c) const noexcept {
+	if (isWhitespace(c)) return false;
+	else if (DelimiterSign(c)) return false;
+	else return true;
 }
 
 std::string Blob::DelimiterName(char c) const {
 	switch (c) {
-	case ascii::STX:
-		return "start of file";
-	case ascii::ETX:
-		return "end of file";
-	default:
-		return std::string("") + c;
+	case ascii::STX: return "start of file";
+	case ascii::ETX: return "end of file";
+	default: return std::string(1, c);
 	}
 }
 std::string Blob::DelimiterSymbol(char c) const {
 	switch (c) {
-	case ascii::STX:
-		return "<<";
-	case ascii::ETX:
-		return ">>";
-	default:
-		return std::string("") + c;
+	case ascii::STX: return "{";
+	case ascii::ETX: return "}";
+	default: return std::string(1, c);
 	}
 }
 
@@ -123,7 +77,7 @@ bool Blob::isAtomic() const {
 		return false;
 	if (children_.size() != 1)
 		return false;
-	const Blob &first = *(children_.begin());
+	const Blob& first = children_.front();
 	if (first.key_ != "")
 		return false;
 	return first.isAtomic();
@@ -131,11 +85,10 @@ bool Blob::isAtomic() const {
 
 std::string Blob::atom() const {
 	if (!isAtomic())
-		throw EBlob().msg(
-				"Syntax error: single value expected.\n" + ErrorString());
+		throw EError("Syntax error: single value expected.\n" + ErrorString());
 	if (val_.length())
 		return val_;
-	return children_.begin()->atom();
+	return children_.front().atom();
 }
 
 bool Blob::isEmpty() const {
@@ -166,33 +119,29 @@ bool Blob::isToken() const {
 	return true;
 }
 
-std::string Blob::Dump(std::string lf) const {
-	std::string out = "";
+std::string Blob::Dump(std::string line_feed) const {
+	std::string out {""};
 	if (key_.length())
 		out += (key_ + "=");
 	if (isAtomic()) {
 		out += ("'" + atom() + "' ");
 		return out;
 	}
-	out += (val_ + DelimiterSymbol(delimiter_) + lf);
-	for (auto &child : children_)
-		out += child.Dump(lf);
+	out += (val_ + DelimiterSymbol(delimiter_) + line_feed);
+	for (auto& child : children_)
+		out += child.Dump(line_feed);
 	if (delimiter_)
-		out += (DelimiterSymbol(MatchingDelimiter(delimiter_)) + lf);
-	for (auto &c : out)
-		if (!c)
-			c = '?';
+		out += (DelimiterSymbol(MatchingDelimiter(delimiter_)) + line_feed);
+	for (auto& c : out)
+		if (c == 0) c = '?';
 	return out;
 }
 
-std::string Blob::DumpChunk(int max_size, int small_size) const {
-	std::string out = Dump("");
-	const int length = out.length();
-	const std::string fancy_out =
-			(length < max_size) ?
-					out :
-					out.substr(0, small_size) + " ... "
-							+ out.substr(length - small_size, small_size);
+std::string Blob::DumpChunk(size_t max_size, size_t small_size) const {
+	std::string out {Dump("")};
+	const size_t length {out.length()};
+	const std::string fancy_out {(length < max_size) ?
+		out : out.substr(0, small_size) + " ... " + out.substr(length - small_size, small_size)};
 	return fancy_out;
 }
 
@@ -201,9 +150,9 @@ std::string Blob::ErrorString() const {
 }
 
 std::string GetABit(std::istream &File) {
-	const int n_chars = 16;
+	const std::streamsize n_chars {16};
 	char buffer[n_chars];
-	for (int i = 0; i < n_chars; i++)
+	for (std::streamsize i {0}; i < n_chars; i++)
 		buffer[i] = 0;
 	File.read(buffer, n_chars - 1);
 	return buffer;
@@ -215,15 +164,15 @@ void Blob::Parse(std::string input) {
 }
 
 void Blob::Parse(std::istream &File) {
-	enum {
-		ready, scan1, scan2, literal
-	} mode = ready;
+	enum class parse_mode {ready, scan1, scan2, literal};
+	using enum parse_mode;
+	parse_mode mode{ready};
 	if (delimiter_ == '"')
 		mode = literal;
-	bool escape = false;
+	bool escape {false};
 	char c;
-	std::string buffer = "";
-	Blob *child = nullptr;
+	std::string buffer {""};
+	Blob *child {nullptr};
 	while (File.good()) {
 		c = File.get();
 		if (!File.good())
@@ -239,10 +188,9 @@ void Blob::Parse(std::istream &File) {
 				continue;
 			}
 			if (DelimiterSign(c) < 0)
-				throw EBlob().msg(
-						std::string("Syntax error: unexpected ")
-								+ DelimiterName(c) + " found before '"
-								+ GetABit(File) + "'.");
+				throw EError("Syntax error: unexpected "
+					+ DelimiterName(c) + " found before '"
+					+ GetABit(File) + "'.");
 			if (DelimiterSign(c) > 0) {
 				Blob &C = AddChild(c, "", "");
 				C.Parse(File);
@@ -251,10 +199,7 @@ void Blob::Parse(std::istream &File) {
 			if (isWhitespace(c))
 				continue;
 			if (c == SplitChar)
-				throw EBlob().msg(
-						std::string("Syntax error: unexpected ")
-								+ DelimiterName(c) + " found before '"
-								+ GetABit(File) + "'.");
+				throw EError("Syntax error: unexpected " + DelimiterName(c) + " found before '" + GetABit(File) + "'.");
 			child = &(AddChild(0, "", ""));
 			mode = scan1;
 			buffer += c;
@@ -265,10 +210,7 @@ void Blob::Parse(std::istream &File) {
 				return;
 			}
 			if (DelimiterSign(c) < 0)
-				throw EBlob().msg(
-						std::string("Syntax error: unexpected ")
-								+ DelimiterName(c) + " found before '"
-								+ GetABit(File) + "'.");
+				throw EError("Syntax error: unexpected " + DelimiterName(c) + " found before '" + GetABit(File) + "'.");
 			if (DelimiterSign(c) > 0) {
 				child->key_ = buffer;
 				buffer = "";
@@ -299,16 +241,10 @@ void Blob::Parse(std::istream &File) {
 				return;
 			}
 			if (DelimiterSign(c) < 0)
-				throw EBlob().msg(
-						std::string("Syntax error: unexpected ")
-								+ DelimiterName(c) + " found before '"
-								+ GetABit(File) + "'.");
+				throw EError("Syntax error: unexpected " + DelimiterName(c) + " found before '" + GetABit(File) + "'.");
 			if (DelimiterSign(c) > 0) {
 				if (buffer.length())
-					throw EBlob().msg(
-							std::string("Syntax error: unexpected ")
-									+ DelimiterName(c) + " found before '"
-									+ GetABit(File) + "'.");
+					throw EError("Syntax error: unexpected " + DelimiterName(c) + " found before '" + GetABit(File) + "'.");
 				child->delimiter_ = c;
 				child->Parse(File);
 				mode = ready;
@@ -323,10 +259,7 @@ void Blob::Parse(std::istream &File) {
 				continue;
 			}
 			if (c == SplitChar)
-				throw EBlob().msg(
-						std::string("Syntax error: unexpected ")
-								+ DelimiterName(c) + " found before '"
-								+ GetABit(File) + "'.");
+				throw EError("Syntax error: unexpected " + DelimiterName(c) + " found before '" + GetABit(File) + "'.");
 			buffer += c;
 			continue;
 		case literal: // for string literals
@@ -339,9 +272,7 @@ void Blob::Parse(std::istream &File) {
 				else if (c == 'n')
 					buffer += "\n";
 				else
-					throw EBlob().msg(
-							"Unknown escape sequence: \\" + std::string(1, c)
-									+ ".");
+					throw EError("Unknown escape sequence: \\" + std::string(1, c) + ".");
 			} else {
 				if (c == MatchingDelimiter(delimiter_)) {
 					val_ = buffer;
@@ -356,4 +287,4 @@ void Blob::Parse(std::istream &File) {
 	}
 }
 
-}
+} //end namespace BoxyLady

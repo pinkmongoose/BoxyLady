@@ -1,98 +1,85 @@
 //============================================================================
 // Name        : BoxyLady
 // Author      : Darren Green
-// Copyright   : (C) Darren Green 2011-2020
+// Copyright   : (C) Darren Green 2011-2025
 // Description : Music sequencer
 //
 // License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
 // This is free software; you are free to change and redistribute it.
 // There is NO WARRANTY, to the extent permitted by law.
-// Contact: darren.green@stir.ac.uk http://www.pinkmongoose.co.uk
+// Contact: darren.green@stir.ac.uk http://pinkmongoose.co.uk
 //============================================================================
 
 #ifndef BLOB_H_
 #define BLOB_H_
 
-#include <cstdlib>
-#include <cerrno>
 #include <iostream>
 #include <sstream>
-#include <cstring>
 #include <string>
-#include <list>
+#include <vector>
+#include <map>
 
 #include "Global.h"
 
 namespace BoxyLady {
 
 namespace ascii {
-enum {
-	STX = 2, ETX = 3
-};
+	inline constexpr unsigned char STX {2}, ETX {3};
 }
 
 class Blob {
-	static constexpr char EscapeChar = '\\', QuoteChar = '"', SplitChar = '=';
-	typedef std::list<Blob> BlobList;
-	typedef BlobList::iterator BlobListIterator;
 private:
-	bool isWhitespace(char) const;
-	char MatchingDelimiter(char) const;
-	int DelimiterSign(char) const;
-	bool isTokenChar(char) const;
-	bool isAutoChar(char) const;
+	static constexpr char EscapeChar {'\\'}, QuoteChar {'"'}, SplitChar {'='};
+	static constexpr std::string_view root {"?"};
+	bool isWhitespace(char) const noexcept;
+	char MatchingDelimiter(char) const noexcept;
+	int DelimiterSign(char) const noexcept;
+	bool isTokenChar(char) const noexcept;
+	bool isAutoChar(char) const noexcept;
 	std::string DelimiterName(char) const;
 	std::string DelimiterSymbol(char) const;
 public:
-	BlobList children_;
+	std::vector<Blob> children_;
 	std::string key_, val_;
 	char delimiter_;
 	void Parse(std::istream&);
 	void Parse(std::string);
-	Blob(char delimiter = ascii::STX, std::string val = "", std::string key =
-			"ROOT") :
-			key_(key), val_(val), delimiter_(delimiter) {
-	}
-	Blob(std::string input, char delimiter = ascii::STX, std::string val = "",
-			std::string key = "ROOT") :
-			key_(key), val_(val), delimiter_(delimiter) {
+	explicit Blob(char delimiter = ascii::STX, std::string val = "", std::string key = std::string{root}) :
+		key_{key}, val_{val}, delimiter_{delimiter} {}
+	explicit Blob(std::string input, char delimiter = ascii::STX, std::string val = "", std::string key = std::string{root}) :
+		key_{key}, val_{val}, delimiter_{delimiter} {
 		Parse(input);
 	}
-	Blob& AddChild(char delimiter = 0, std::string val = "", std::string key =
-			"") {
+	Blob& AddChild(char delimiter = 0, std::string val = "", std::string key = "") {
 		children_.push_back(Blob(delimiter, val, key));
 		return children_.back();
 	}
 	Blob Wrap(char);
 	bool hasKey(std::string key) const {
-		for (auto &child : children_)
+		for (auto& child : children_)
 			if (child.key_ == key)
 				return true;
 		return false;
 	}
 	Blob& operator[](std::string key) {
-		for (auto &child : children_)
+		for (auto& child : children_)
 			if (child.key_ == key)
 				return child;
-		throw EBlob().msg(
-				"Syntax error: missing value '" + key + "'.\n" + ErrorString());
+		throw EError("Syntax error: missing value '" + key + "'.\n" + ErrorString());
 	}
-	Blob& operator[](int index) {
-		if (index > int(children_.size() - 1))
-			throw EBlob().msg("Syntax error: missing value.\n" + ErrorString());
-		BlobListIterator iterator = children_.begin();
-		for (int counter = 0; counter < index; counter++)
-			iterator++;
-		return *iterator;
+	Blob& operator[](size_t index) {
+		if (index > children_.size() - 1)
+			throw EError("Syntax error: missing value.\n" + ErrorString());
+		return children_[index];
 	}
 	bool hasFlag(std::string key) const {
-		for (auto &child : children_)
+		for (auto& child : children_)
 			if ((child.key_ == "") && (child.val_ == key))
 				return true;
 		return false;
 	}
 	std::string Dump(std::string = "\n") const;
-	std::string DumpChunk(int = 25, int = 10) const;
+	std::string DumpChunk(size_t = 25, size_t = 10) const;
 	std::string ErrorString() const;
 	bool isAtomic() const;
 	bool isEmpty() const;
@@ -103,58 +90,52 @@ public:
 	}
 	Blob& ifFunction() {
 		if (!isFunction())
-			throw EBlob().msg("Syntax error: ( expected.\n" + ErrorString());
+			throw EError("Unknown command. () missing?\n" + ErrorString());
 		return *this;
 	}
 	void AssertFunction() {
 		ifFunction();
 	}
 	std::string atom() const;
-	int asInt(int low = INT_MIN, int high = INT_MAX) const {
-		char *errc = NULL;
-		errno = 0;
-		const int result = strtol(atom().c_str(), &errc, 10);
-		if (errno || strlen(errc))
-			throw EBlob().msg(
-					"Syntax error: integer expected.\n" + ErrorString());
+	int asInt(int low = int_min, int high = int_max) const {
+		int result {0};
+		try {
+        	result = std::stoi(atom());
+		} catch (const std::exception& e) {
+			throw EError("Syntax error: integer expected.\n" + ErrorString());
+		}
 		if ((result < low) || (result > high))
-			throw EBlob().msg("Integer out of range.\n" + ErrorString());
+			throw EError("Integer out of range.\n" + ErrorString());
 		else
 			return result;
 	}
-	double asDouble(double low = -DBL_MAX, double high = DBL_MAX) const {
-		char *errc = NULL;
-		errno = 0;
-		const double result = strtod(atom().c_str(), &errc);
-		if (errno || strlen(errc))
-			throw EBlob().msg(
-					"Syntax error: float expected.\n" + ErrorString());
+	float_type asFloat(float_type low = -float_type_max, float_type high = float_type_max) const {
+		float_type result {0};
+		try {
+        	result = std::stod(atom());
+		} catch (const std::exception& e) {
+			throw EError("Syntax error: float expected.\n" + ErrorString());
+		}
 		if ((result < low) || (result > high))
-			throw EBlob().msg(
-					"Floating point number out of range.\n" + ErrorString());
+			throw EError("Floating point number out of range.\n" + ErrorString());
 		else
 			return result;
 	}
 	bool asBool() const {
-		const std::string string_value = atom();
-		if ((string_value == "TRUE") || (string_value == "T"))
-			return true;
-		if ((string_value == "FALSE") || (string_value == "F"))
-			return false;
-		throw EBlob().msg("Syntax error: boolean expected.\n" + ErrorString());
+		static const std::map<std::string_view, bool> bool_map {{"TRUE",true}, {"T",true}, {"true",true}, {"FALSE",false}, {"F",false}, {"false",false}};
+		if (const auto string_value = atom(); bool_map.contains(string_value)) return bool_map.at(string_value);
+		else throw EError("Syntax error: boolean expected.\n" + ErrorString());
 	}
-	bool tryWriteInt(std::string lookup_key, int &value, int low = INT_MIN,
-			int high = INT_MAX) {
+	bool tryWriteInt(std::string lookup_key, int& value, int low = int_min, int high = int_max) {
 		if (hasKey(lookup_key)) {
 			value = operator[](lookup_key).asInt(low, high);
 			return true;
 		} else
 			return false;
 	}
-	bool tryWriteDouble(std::string lookup_key, double &value, double low =
-			-DBL_MAX, double high = DBL_MAX) {
+	bool tryWritefloat_type(std::string lookup_key, float_type& value, float_type low = -float_type_max, float_type high = float_type_max) {
 		if (hasKey(lookup_key)) {
-			value = operator[](lookup_key).asDouble(low, high);
+			value = operator[](lookup_key).asFloat(low, high);
 			return true;
 		} else
 			return false;
@@ -175,6 +156,6 @@ public:
 	}
 };
 
-}
+} //end namespace BoxyLady
 
 #endif /* BLOB_H_ */

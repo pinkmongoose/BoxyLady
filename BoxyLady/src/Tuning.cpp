@@ -1,42 +1,38 @@
 //============================================================================
 // Name        : BoxyLady
 // Author      : Darren Green
-// Copyright   : (C) Darren Green 2011-2020
+// Copyright   : (C) Darren Green 2011-2025
 // Description : Music sequencer
 //
 // License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
 // This is free software; you are free to change and redistribute it.
 // There is NO WARRANTY, to the extent permitted by law.
-// Contact: darren.green@stir.ac.uk http://www.pinkmongoose.co.uk
+// Contact: darren.green@stir.ac.uk http://pinkmongoose.co.uk
 //============================================================================
 
+#include <utility>
+#include <numeric>
+
 #include "Tuning.h"
+#include "Fraction.h"
+#include "Builders.h"
 
 namespace BoxyLady {
 
-constexpr int DiatonicNotes { 7 }, ChromaticNotes { 12 };
-const std::array<std::string, DiatonicNotes> StandardNames { { "c", "d", "e",
-		"f", "g", "a", "b" } };
-const std::array<std::string, ChromaticNotes> ChromaticNames { { "c", "cis",
-		"d", "ees", "e", "f", "fis", "g", "gis", "a", "bes", "b" } };
-const std::array<int, DiatonicNotes> StandardNotes { { 0, 2, 4, 5, 7, 9, 11 } };
-constexpr double MaxAccidental { 100.0 };
+constexpr size_t DiatonicNotes {7}, ChromaticNotes {12};
+const std::array<std::string, DiatonicNotes> StandardNames { { "c", "d", "e", "f", "g", "a", "b" } };
+const std::array<std::string, ChromaticNotes> ChromaticNames { { "c", "cis", "d", "ees", "e", "f", "fis", "g", "gis", "a", "bes", "b" } };
+constexpr std::array<int, DiatonicNotes> StandardNotes { { 0, 2, 4, 5, 7, 9, 11 } };
+constexpr float_type MaxAccidental {100.0};
 
 PitchGamut& PitchGamut::Clear() {
-	note_names_.clear();
-	pitch_classes_n_ = 0;
-	repeat_ratio_ = 2.0;
-	note_values_.clear();
-	accidentals_.clear();
-	pitches_.clear();
-	standard_pitch_ = 1.0;
-	return *this;
+	return *this = PitchGamut();
 }
 
-double PitchGamut::PitchIndex(NoteValue note) {
-	double rank = note_values_[note.number_] + note.accidental_, max_rank =
-			static_cast<double>(pitch_classes_n_);
-	if (rank < 0)
+float_type PitchGamut::PitchIndex(NoteValue note) {
+	float_type rank {note_values_[note.number_] + note.accidental_},
+		max_rank {static_cast<float_type>(pitch_classes_n_)};
+	if (rank < 0.0)
 		return rank + max_rank;
 	else if (rank > max_rank)
 		return rank - max_rank;
@@ -44,11 +40,9 @@ double PitchGamut::PitchIndex(NoteValue note) {
 		return rank;
 }
 
-int PitchGamut::NearestOctave(const NoteValue note,
-		const NoteValue relative_note) const {
-	int number_difference = note.number_ - relative_note.number_;
-	double fraction_of_octave = static_cast<double>(number_difference)
-			/ static_cast<double>(note_names_.size());
+int PitchGamut::NearestOctave(const NoteValue note, const NoteValue relative_note) const {
+	int number_difference {note.number_ - relative_note.number_};
+	float_type fraction_of_octave {static_cast<float_type>(number_difference) / static_cast<float_type>(note_names_.size())};
 	if (fraction_of_octave > 0.5)
 		return -1;
 	else if (fraction_of_octave <= -0.5)
@@ -57,14 +51,14 @@ int PitchGamut::NearestOctave(const NoteValue note,
 		return 0;
 }
 
-NoteValue PitchGamut::Note(const std::string input) {
-	std::string buffer = input, buffer2;
+NoteValue PitchGamut::NoteAbsolute(const std::string input) {
+	std::string buffer {input}, buffer2;
 	NoteValue note;
-	int number = -1, name_length = 0;
-	for (size_t index = 0; index < note_names_.size(); index++) {
-		const std::string &note_name = note_names_[index];
+	size_t number {std::string::npos}, name_length {0};
+	for (size_t index {0}; index < note_names_.size(); index++) {
+		const auto& note_name {note_names_[index]};
 		if (buffer.find(note_name) == 0) {
-			const int this_length = note_name.length();
+			const size_t this_length {note_name.length()};
 			if (this_length > name_length) {
 				number = index;
 				name_length = this_length;
@@ -72,13 +66,11 @@ NoteValue PitchGamut::Note(const std::string input) {
 		}
 	}
 	buffer.erase(0, name_length);
-	if (number < 0)
-		throw EGamut().msg(
-				"Note [" + buffer + "] not recognised in current gamut.");
+	if (number == std::string::npos)
+		throw EError("Note [" + buffer + "] not recognised in current gamut.");
 	note.number_ = number;
-	const size_t down_index = buffer.find(','), up_index = buffer.find('\'');
-	size_t articulation_index = buffer.find('-');
-	size_t note_end = down_index;
+	const size_t down_index {buffer.find(',')}, up_index {buffer.find('\'')};
+	size_t articulation_index {buffer.find('-')}, note_end {down_index};
 	if (up_index < note_end)
 		note_end = up_index;
 	if (articulation_index < note_end)
@@ -94,11 +86,9 @@ NoteValue PitchGamut::Note(const std::string input) {
 		buffer.erase(0, note_end);
 	}
 	if (buffer2.length() > 0) {
-		int count = accidentals_.count(buffer2);
+		size_t count {accidentals_.count(buffer2)};
 		if (count != 1)
-			throw EGamut().msg(
-					"Accidental [" + buffer2
-							+ "] not recognised in current gamut.");
+			throw EError("Accidental [" + buffer2 + "] not recognised in current gamut.");
 		note.accidental_ = accidentals_[buffer2][note.number_];
 	}
 	articulation_index = buffer.find('-');
@@ -111,25 +101,21 @@ NoteValue PitchGamut::Note(const std::string input) {
 		else if (index == ',')
 			note.octave_--;
 		else
-			throw EGamut().msg(
-					"Found something odd: [" + buffer
-							+ "] while building a note.");
+			throw EError("Found something odd: [" + buffer + "] while building a note.");
 	}
 	return note;
 }
 
-NoteValue PitchGamut::Note(std::string input, NoteValue relative_note) {
-	NoteValue note = Note(input);
-	note.octave_ = note.octave_ + relative_note.octave_
-			+ NearestOctave(note, relative_note);
+NoteValue PitchGamut::NoteRelative(std::string input, NoteValue relative_note) {
+	NoteValue note {NoteAbsolute(input)};
+	note.octave_ = note.octave_ + relative_note.octave_ + NearestOctave(note, relative_note);
 	return note;
 }
 
-NoteValue PitchGamut::Offset(NoteValue note, int number_offset,
-		double accidental_offset, int octave_offset) const {
+NoteValue PitchGamut::Offset(NoteValue note, int number_offset, float_type accidental_offset, int octave_offset) const {
 	note.number_ += number_offset;
-	const int names_count = note_names_.size();
-	while (note.number_ >= names_count) {
+	const size_t names_count {note_names_.size()};
+	while (std::cmp_greater_equal(note.number_, names_count)) {
 		note.number_ -= names_count;
 		note.octave_++;
 	}
@@ -142,108 +128,118 @@ NoteValue PitchGamut::Offset(NoteValue note, int number_offset,
 	return note;
 }
 
-double PitchGamut::FreqMultStandard(NoteValue note) {
-	const double note_ratio = FreqMultFromNote(note);
+float_type PitchGamut::FreqMultStandard(NoteValue note) {
+	const float_type note_ratio {FreqMultFromNote(note)};
 	return note_ratio / standard_pitch_;
 }
 
-double PitchGamut::FreqMultFromNote(NoteValue note) {
-	int &octave = note.octave_;
-	double rank = note_values_[note.number_] + note.accidental_, max_rank =
-			static_cast<double>(pitch_classes_n_);
+float_type PitchGamut::FreqMultFromNote(NoteValue note) {
+	int& octave {note.octave_};
+	float_type rank {note_values_[note.number_] + note.accidental_ + key_signature_[note.number_]},
+		max_rank {static_cast<float_type>(pitch_classes_n_)};
 	while (rank > max_rank) {
 		rank -= max_rank;
 		octave++;
 	}
-	while (rank < 0) {
+	while (rank < 0.0) {
 		rank += max_rank;
 		octave--;
 	}
-	const double rank_remainder = rank - floor(rank);
-	if (rank_remainder == 0)
+	const float_type rank_remainder {rank - floor(rank)};
+	if (rank_remainder == 0.0)
 		return FreqMultFromRank(octave, rank);
 	else {
-		const double ratio_below = FreqMultFromRank(octave, floor(rank)),
-				ratio_above = FreqMultFromRank(octave, floor(rank) + 1);
-		return exp(
-				log(ratio_below) * (1.0 - rank_remainder)
-						+ log(ratio_above) * rank_remainder);
+		const float_type ratio_below {FreqMultFromRank(octave, floor(rank))},
+			ratio_above {FreqMultFromRank(octave, floor(rank) + 1.0)};
+		return exp(log(ratio_below) * (1.0 - rank_remainder) + log(ratio_above) * rank_remainder);
 	}
 }
 
-double PitchGamut::FreqMultFromRank(int octave, double rank) {
-	const double max_rank = static_cast<double>(pitch_classes_n_);
+float_type PitchGamut::FreqMultFromRank(int octave, float_type rank) {
+	const float_type max_rank {static_cast<float_type>(pitch_classes_n_)};
 	while (rank >= max_rank) {
 		rank -= max_rank;
 		octave++;
 	}
-	while (rank < 0) {
+	while (rank < 0.0) {
 		rank += max_rank;
 		octave--;
 	}
-	return pow(repeat_ratio_, octave) * pitches_[int(rank)];
+	return pow(repeat_ratio_, octave) * pitches_[static_cast<size_t>(rank)];
 }
 
-PitchGamut& PitchGamut::StandardPitch(std::string input, double ratio) {
-	standard_pitch_ = FreqMultFromNote(Note(input));
+PitchGamut& PitchGamut::StandardPitch(std::string input, float_type ratio) {
+	standard_pitch_ = FreqMultFromNote(NoteAbsolute(input));
 	standard_pitch_ /= ratio;
 	return *this;
 }
 
-void PitchGamut::StandardAccidentals(double multiplier) {
-	const int names_count = note_names_.size();
-	auto NewAccidental = [this, names_count, multiplier](std::string key,
-			double fraction) {
-		Accidental(key).assign(names_count, fraction * multiplier);
+void PitchGamut::StandardAccidentals(float_type multiplier) {
+	static const std::vector<std::tuple<std::string, float_type>> standard_accidentals {
+		{"es", -1.0}, {"is", 1.0}, {"eses", -2.0}, {"isis", 2.0}, {"eh", -0.5}, {"ih", 0.5},
+		{"eseh", -1.5}, {"isih", 1.5}, {"et", -2.0 / 3.0}, {"it", 2.0 / 3.0},
+		{"ets", -1.0 / 3.0}, {"its", 1.0 / 3.0}
 	};
-	NewAccidental("es", -1.0);
-	NewAccidental("is", 1.0);
-	NewAccidental("eses", -2.0);
-	NewAccidental("isis", 2.0);
-	NewAccidental("eh", -0.5);
-	NewAccidental("ih", 0.5);
-	NewAccidental("eseh", -1.5);
-	NewAccidental("isih", 1.5);
-	NewAccidental("et", -2.0 / 3.0);
-	NewAccidental("it", 2.0 / 3.0);
-	NewAccidental("ets", -1.0 / 3.0);
-	NewAccidental("its", 1.0 / 3.0);
+	for (auto accidental : standard_accidentals)
+		Accidental(std::get<0>(accidental)).assign(note_names_.size(), multiplier * std::get<1>(accidental));
 }
 
-DoubleVector& PitchGamut::Accidental(std::string name) {
+FloatVector& PitchGamut::Accidental(std::string name) {
 	if (accidentals_.count(name))
 		return accidentals_[name];
 	else {
-		accidentals_.insert(
-				std::pair<std::string, DoubleVector>(name, DoubleVector()));
+		accidentals_.insert(std::pair<std::string, FloatVector>(name, FloatVector()));
 		return accidentals_[name];
 	}
 }
 
-void PitchGamut::List(Blob &blob) {
-	constexpr double DefaultCents = 20.0;
-	double tol = pow(2.0, DefaultCents / physics::CentsPerOctave);
-	int limit = INT_MAX;
+void PitchGamut::List(Blob& blob) {
+	static const std::map<std::string, pitch_unit> pitch_units {
+		{"cent", pitch_unit::cents}, {"m8ve", pitch_unit::millioctaves}, {"yu", pitch_unit::yu},
+		{"12edo", pitch_unit::edo12}, {"19edo", pitch_unit::edo19},
+		{"24edo", pitch_unit::edo24}, {"31edo", pitch_unit::edo31},
+		{"Savart", pitch_unit::savart},
+		{"meride", pitch_unit::meride}, {"heptameride", pitch_unit::heptameride}
+	}; 
+	constexpr float_type DefaultCents {20.0};
+	float_type tol {pow(2.0, DefaultCents / physics::CentsPerOctave)};
+	int limit {int_max};
+	pitch_unit unit {pitch_unit::cents};
+	if (blob.hasKey("pitch_unit")) {
+		const std::string unit_str {blob["pitch_unit"].atom()};
+		if (pitch_units.contains(unit_str)) unit = pitch_units.at(unit_str);
+		else throw EError(unit_str + ": Unknown pitch unit.");
+	}
 	if (blob.hasKey("tol"))
-		tol = pow(2.0, blob["tol"].asDouble(0, 100) / physics::CentsPerOctave);
+		tol = pow(2.0, blob["tol"].asFloat(0, 100) / physics::CentsPerOctave);
 	if (blob.hasKey("limit"))
-		limit = blob["limit"].asInt(0, INT_MAX);
-	auto ListFraction = [](Fraction fraction, Fraction remainder) {
-		return fraction.RatioString() + " " + fraction.CentsString() + " ~ "
-				+ fraction.FractionString(true) + " (" + remainder.CentsString()
-				+ ") " + fraction.IntervalString();
+		limit = blob["limit"].asInt(3, int_max);
+	const bool list_factors {blob.hasFlag("factors")}, monzo_factors {blob.hasFlag("Monzo")};
+	Screen::PrintFlags frame_flags;
+	frame_flags[Screen::print_flag::frame] = !(list_factors || monzo_factors);
+	auto ListFraction = [unit, list_factors, monzo_factors](Fraction fraction, Fraction remainder) {
+		Screen::escape remainder_escape {(remainder.sgnLog() < 0.0)? Screen::escape::magenta :
+			((remainder.sgnLog() > 0.0)? Screen::escape::cyan : Screen::escape::yellow)};
+		return fraction.RatioString() + " " + screen.Tab(18)
+			+ screen.Format({Screen::escape::yellow},fraction.PitchUnitString(unit))
+			+ screen.Tab(27) + " ~ "
+			+ fraction.FractionString(true)
+			+ " (" + screen.Format({remainder_escape}, remainder.PitchUnitString(unit)) + ") "
+			+ screen.Format({Screen::escape::green}, fraction.IntervalString()) + " "
+			+ (list_factors? Factors(fraction).toString() + " " : "")
+			+ (monzo_factors? Factors(fraction).toMonzo() : "");
 	};
-	auto DoList = [this, ListFraction, tol, limit](double ratio) {
-		const Fraction fraction(ratio, tol, limit), remainder(
-				ratio / fraction.ratio());
+	auto DoList = [this, ListFraction, tol, limit](float_type ratio) {
+		const Fraction fraction(ratio, tol, limit),
+			remainder(ratio / fraction.ratio());
 		return ListFraction(fraction, remainder);
 	};
 	enum class list_type {
 		all, automatic, diatonic, chromatic
 	};
-	list_type type = list_type::all;
+	list_type type {list_type::all};
 	if (blob.hasKey("type")) {
-		const std::string atom = blob["type"].atom();
+		const auto atom {blob["type"].atom()};
 		if (atom == "diatonic")
 			type = list_type::diatonic;
 		else if (atom == "chromatic")
@@ -251,69 +247,78 @@ void PitchGamut::List(Blob &blob) {
 		else if (atom == "auto")
 			type = list_type::automatic;
 	}
-	std::cout << "\n" << screen::Header << screen::Tab << "Pitch table\n"
-			<< screen::Header;
+	screen.PrintHeader("Pitch table");
 	switch (type) {
 	case list_type::automatic:
 		for (auto index : note_names_)
-			std::cout << index << " = " << DoList(pitches_[PitchIndex(index)])
-					<< "\n";
+			screen.PrintFrame(index + " = " + DoList(pitches_[PitchIndex(index)]), frame_flags);
 		break;
 	case list_type::diatonic:
 		for (auto index : StandardNames)
-			std::cout << index << " = " << DoList(pitches_[PitchIndex(index)])
-					<< "\n";
+			screen.PrintFrame(index + " = " + DoList(pitches_[PitchIndex(index)]), frame_flags);
 		break;
 	case list_type::chromatic:
 		for (auto index : ChromaticNames)
-			std::cout << index << " = " << DoList(pitches_[PitchIndex(index)])
-					<< "\n";
+			screen.PrintFrame(index + " = " + DoList(pitches_[PitchIndex(index)]), frame_flags);
 		break;
 	default:
-		for (int index = 0; index < pitch_classes_n_; index++)
-			std::cout << "pitch " << index << " = " << DoList(pitches_[index])
-					<< "\n";
+		for (size_t index {0}; index < pitch_classes_n_; index++)
+			screen.PrintFrame(std::format("{}",index) + " = " + DoList(pitches_[index]), frame_flags);
 		break;
 	};
-	std::cout << "Repeat ratio = " << DoList(repeat_ratio_) << "\n";
-	std::cout << screen::Header;
+	screen.PrintFrame("RR = " + DoList(repeat_ratio_), frame_flags);
+	screen.PrintSeparatorBot();
 }
 
-PitchGamut& PitchGamut::TuningBlob(Blob &blob, bool makemusic) {
-	std::string tuning, key = "c";
+PitchGamut& PitchGamut::TuningBlob(Blob& blob, [[maybe_unused]] bool makemusic) {
+	std::string tuning, key {"c"};
 	if (blob.hasKey("type")) {
 		tuning = blob["type"].atom();
 		key = blob["key"].atom();
 	} else
 		tuning = blob.atom();
-	if (tuning == "10tet")
+	if (tuning == "10edo")
 		TET10();
-	else if (tuning == "12tet")
+	else if (tuning == "12edo")
 		TET12();
-	else if (tuning == "14tet")
+	else if (tuning == "14edo")
 		TET14();
-	else if (tuning == "15tet")
-		TET15();
-	else if (tuning == "19tet")
-		TET19();
-	else if (tuning == "22tet")
-		TET22();
-	else if (tuning == "31tet")
-		TET31();
+	else if (tuning == "15edo")
+		TwotoneNotes(3, 2, 1).EqualTemper(2.0).StandardPitch();
+	else if (tuning == "19edo")
+		MeantoneNotes(3, 2).EqualTemper(2.0).StandardPitch();
+	else if (tuning == "22edo")
+		TwotoneNotes(4, 3, 2).EqualTemper(2.0).StandardPitch();
+	else if (tuning == "29edo")
+		TwotoneNotes(5, 4, 3).EqualTemper(2.0).StandardPitch();
+	else if (tuning == "31edo")
+		MeantoneNotes(5, 3).EqualTemper(2.0).StandardPitch();
+	else if (tuning == "43edo")
+		MeantoneNotes(7, 4).EqualTemper(2.0).StandardPitch();
+	else if (tuning == "48edo")
+		TwotoneNotes(8, 7, 5).EqualTemper(2.0).StandardPitch();
+	else if (tuning == "50edo")
+		MeantoneNotes(8, 5).EqualTemper(2.0).StandardPitch();
+	else if (tuning == "53edo")
+		TwotoneNotes(9, 8, 5).EqualTemper(2.0).StandardPitch();
+	else if (tuning == "81edo")
+		MeantoneNotes(13, 8).EqualTemper(2.0).StandardPitch();
 	else if (tuning == "pelog")
 		Pelog();
 	else if (tuning == "slendro")
 		Slendro();
 	else if (tuning == "Pythagorean")
-		Pythagorean12(key);
+		MeantoneNotes(2, 1).MeantoneRegular(3.0 / 2.0, key, 2.0);
 	else if (tuning == "4cmt")
-		QuarterComma12(key);
+		MeantoneNotes(2, 1).MeantoneRegular(pow(5.0, 0.25), key, 2.0);
 	else if (tuning == "harmonic")
 		Harmonic12(key);
 	else if (tuning == "Ptolemy")
 		Ptolemy12(key);
 	else if (tuning == "Harrison")
-		Harrison12(key);
+		MeantoneNotes(2, 1).MeantoneRegular(1.494412, key, 2.0);
+	else if (tuning == "golden")
+		MeantoneNotes(2, 1).MeantoneRegular(1.49503445, key, 2.0);
 	else if (tuning == "BPLambda")
 		BPLambda();
 	else if (tuning == "WCAlpha")
@@ -323,82 +328,73 @@ PitchGamut& PitchGamut::TuningBlob(Blob &blob, bool makemusic) {
 	else if (tuning == "WCGamma")
 		WCGamma();
 	else
-		throw EGamut().msg(tuning + ": Unknown tuning type.");
+		throw EError(tuning + ": Unknown tuning type.");
 	return *this;
 }
 
-PitchGamut& PitchGamut::ParseBlob(Blob &blob, bool make_music) {
+PitchGamut& PitchGamut::ParseBlob(Blob& blob, bool make_music) {
 	for (auto command : blob.children_) {
-		std::string key = command.key_, val = command.val_;
+		auto key {command.key_}, val {command.val_};
 		if (key == "new")
 			Clear();
 		else if (key == "tuning")
 			TuningBlob(command.ifFunction(), make_music);
 		else if (key == "note_names") {
-			size_t count = command.ifFunction().children_.size();
+			size_t count {command.ifFunction().children_.size()};
 			note_names_.resize(count);
+			key_signature_.resize(count);
 			note_values_.clear();
 			accidentals_.clear();
-			for (size_t index = 0; index < count; index++)
+			for (size_t index {0}; index < count; index++)
 				note_names_[index] = command[index].atom();
 		} else if (key == "notes_meantone")
-			MeantoneNotes(command.ifFunction()["tone"].asInt(1, INT_MAX),
-					command["half"].asInt(1, INT_MAX));
+			MeantoneNotes(command.ifFunction()["tone"].asInt(1, int_max), command["half"].asInt(1, int_max));
 		else if (key == "notes_twotone")
-			TwotoneNotes(command.ifFunction()["major"].asInt(1, INT_MAX),
-					command["minor"].asInt(1, INT_MAX),
-					command["half"].asInt(1, INT_MAX));
-		else if (key == "notes_porcupine")
-			PorcupineNotes(command.ifFunction()["major"].asInt(2, INT_MAX),
-					command["minor"].asInt(1, INT_MAX));
+			TwotoneNotes(command.ifFunction()["major"].asInt(1, int_max),
+				command["minor"].asInt(1, int_max),
+				command["half"].asInt(1, int_max));
 		else if (key == "pitch_classes") {
-			pitch_classes_n_ = command.asInt(1, INT_MAX);
+			pitch_classes_n_ = command.asInt(1, int_max);
 			pitches_.assign(pitch_classes_n_, 1.0);
 			note_names_.clear();
 			note_values_.clear();
+			key_signature_.clear();
 			accidentals_.clear();
 		} else if (key == "notes") {
 			if (note_names_.size() == 0)
-				throw EGamut().msg("Note names must be assigned before notes.");
-			size_t count = command.ifFunction().children_.size();
+				throw EError("Note names must be assigned before notes.");
+			size_t count {command.ifFunction().children_.size()};
 			if (count != note_names_.size())
-				throw EGamut().msg("Note offsets doesn't match note names.");
+				throw EError("Note offsets doesn't match note names.");
 			note_values_.resize(count);
-			for (size_t index = 0; index < count; index++)
-				note_values_[index] = command[index].asDouble(0,
-						pitch_classes_n_);
+			for (size_t index {0}; index < count; index++)
+				note_values_[index] = command[index].asFloat(0.0, pitch_classes_n_);
 		} else if (key == "accidentals") {
 			command.AssertFunction();
 			if (note_names_.size() == 0)
-				throw EGamut().msg(
-						"Note names must be assigned before accidentals.");
+				throw EError("Note names must be assigned before accidentals.");
 			for (auto sub_command : command.children_) {
-				std::string key = sub_command.key_;
-				const size_t count = sub_command.children_.size(), names_count =
-						note_names_.size();
+				const auto key {sub_command.key_};
+				const size_t count {sub_command.children_.size()},
+					names_count {note_names_.size()};
 				if (count == 1)
-					Accidental(key).assign(names_count,
-							sub_command[0].asDouble(-MaxAccidental,
-									MaxAccidental));
+					Accidental(key).assign(names_count, sub_command[0].asFloat(-MaxAccidental,MaxAccidental));
 				else {
 					sub_command.AssertFunction();
 					if (count != names_count)
-						throw EGamut().msg(
-								"Note accidentals don't match note names.");
-					DoubleVector offsets;
+						throw EError("Note accidentals don't match note names.");
+					FloatVector offsets;
 					offsets.resize(count);
-					for (size_t index = 0; index < count; index++)
-						offsets[index] = sub_command[index].asDouble(
-								-MaxAccidental, MaxAccidental);
+					for (size_t index {0}; index < count; index++)
+						offsets[index] = sub_command[index].asFloat(-MaxAccidental, MaxAccidental);
 					Accidental(key) = offsets;
 				}
 			}
 		} else if (key == "standard_accidentals")
-			StandardAccidentals(
-					command.asDouble(-MaxAccidental, MaxAccidental));
+			StandardAccidentals(command.asFloat(-MaxAccidental, MaxAccidental));
 		else if (key == "standard") {
-			const std::string name = command.ifFunction()["note"].atom();
-			const double ratio = command["r"].asDouble(0, 10000);
+			const auto name {command.ifFunction()["note"].atom()};
+			const float_type ratio {command["r"].asFloat(0.0, 10000.0)};
 			StandardPitch(name, ratio);
 		} else if (key == "repeat_ratio")
 			repeat_ratio_ = BuildFrequency(command);
@@ -410,62 +406,62 @@ PitchGamut& PitchGamut::ParseBlob(Blob &blob, bool make_music) {
 			if (make_music)
 				List(command.ifFunction());
 		} else if (key == "generator") {
-			std::string base_note = command.ifFunction()["note"].atom();
-			const int rank = PitchIndex(base_note);
-			const double base = BuildFrequency(command["r"]), generator =
-					BuildFrequency(command["g"]);
-			const int count = command["n"].asInt(1, INT_MAX), step =
-					command["step"].asInt(-pitch_classes_n_, pitch_classes_n_);
+			const auto base_note {command.ifFunction()["note"].atom()};
+			const int rank {static_cast<int>(PitchIndex(base_note))};
+			const float_type base {BuildFrequency(command["r"])},
+				generator {BuildFrequency(command["g"])};
+			const int count {command["n"].asInt(1, int_max)},
+				step {command["step"].asInt(-pitch_classes_n_, pitch_classes_n_)};
 			Generator(base, generator, step, rank, count - 1);
 		} else if (key == "pitches") {
-			if (int(command.ifFunction().children_.size()) != pitch_classes_n_)
-				throw EGamut().msg("Pitches don't match expected size.");
-			for (int index = 0; index < pitch_classes_n_; index++)
+			if (command.ifFunction().children_.size() != pitch_classes_n_)
+				throw EError("Pitches don't match expected size.");
+			for (size_t index {0}; index < pitch_classes_n_; index++)
 				pitches_[index] = BuildFrequency(command[index]);
+		} else if (key == "key_signature") {
+			if (command.ifFunction().children_.size() != note_names_.size())
+				throw EError("Key signature list dosn't match expected size.");
+			for (size_t index {0}; index < note_names_.size(); index++)
+				key_signature_[index] = command[index].asFloat(-10.0,10.0);
 		} else if (key == "pitch") {
-			int rank = PitchIndex(command.ifFunction()["note"].atom());
+			size_t rank {static_cast<size_t>(PitchIndex(command.ifFunction()["note"].atom()))};
 			pitches_[rank] = BuildFrequency(command["r"]);
 		} else if (key == "move_pitch") {
-			int rank = PitchIndex(command.ifFunction()["note"].atom());
+			size_t rank {static_cast<size_t>(PitchIndex(command.ifFunction()["note"].atom()))};
 			pitches_[rank] *= BuildFrequency(command["r"]);
 		} else if (key == "rotate_pitches") {
-			std::string base_note = command.ifFunction()["note"].atom();
-			const int rank = PitchIndex(base_note);
+			const auto base_note {command.ifFunction()["note"].atom()};
+			const int rank {static_cast<int>(PitchIndex(base_note))};
 			RotatePitches(rank);
 		} else
-			throw EGamut().msg(key + "=" + val + ": Unknown command.");
+			throw EError(key + "=" + val + ": Unknown command.");
 	}
 	if (pitch_classes_n_ < 1)
-		throw EGamut().msg("Gamut was not complete on finishing (no pitches).");
+		throw EError("Gamut was not complete on finishing (no pitches).");
 	if (note_values_.size() < 1)
-		throw EGamut().msg(
-				"Gamut was not complete on finishing (no note offsets).");
+		throw EError("Gamut was not complete on finishing (no note offsets).");
 	if (note_names_.size() < 1)
-		throw EGamut().msg(
-				"Gamut was not complete on finishing (no note names).");
+		throw EError("Gamut was not complete on finishing (no note names).");
 	return *this;
 }
 
 PitchGamut& PitchGamut::NormalisePitches() {
-	const double ratio0 = pitches_[0];
-	for (auto &pitch : pitches_)
+	const float_type ratio0 {pitches_[0]};
+	for (auto& pitch : pitches_)
 		pitch /= ratio0;
 	return *this;
 }
 
 PitchGamut& PitchGamut::RotatePitches(int offset) {
 	if (pitch_classes_n_ < 1)
-		throw EGamut().msg(
-				"Can't rotate pitches until they have been assigned.");
-	DoubleVector new_pitches = pitches_;
-	for (int index = 0; index < pitch_classes_n_; index++) {
-		int offset_index = index + offset;
+		throw EError("Can't rotate pitches until they have been assigned.");
+	FloatVector new_pitches {pitches_};
+	for (size_t index {0}; index < pitch_classes_n_; index++) {
+		int offset_index {static_cast<int>(index) + offset};
 		if (offset_index < 0)
-			new_pitches[offset_index + pitch_classes_n_] = pitches_[index]
-					* repeat_ratio_;
-		else if (offset_index >= pitch_classes_n_)
-			new_pitches[offset_index - pitch_classes_n_] = pitches_[index]
-					/ repeat_ratio_;
+			new_pitches[offset_index + pitch_classes_n_] = pitches_[index] * repeat_ratio_;
+		else if (std::cmp_greater_equal(offset_index, pitch_classes_n_))
+			new_pitches[offset_index - pitch_classes_n_] = pitches_[index] / repeat_ratio_;
 		else
 			new_pitches[offset_index] = pitches_[index];
 	}
@@ -474,66 +470,57 @@ PitchGamut& PitchGamut::RotatePitches(int offset) {
 	return *this;
 }
 
-PitchGamut& PitchGamut::EqualTemper(double repeat_ratio) {
+PitchGamut& PitchGamut::EqualTemper(float_type repeat_ratio) {
 	repeat_ratio_ = repeat_ratio;
-	for (int index = 0; index < pitch_classes_n_; index++)
+	for (size_t index {0}; index < pitch_classes_n_; index++)
 		pitches_[index] = pow(repeat_ratio_,
-				static_cast<double>(index)
-						/ static_cast<double>(pitch_classes_n_));
+			static_cast<float_type>(index) / static_cast<float_type>(pitch_classes_n_));
 	return *this;
 }
 
-PitchGamut& PitchGamut::TwotoneNotes(int major, int minor, int half) {
+PitchGamut& PitchGamut::TwotoneNotes(size_t major, size_t minor, size_t half) {
 	Clear();
 	if (major < minor)
-		throw EGamut().msg(
-				"Major tone must be at least as large as minor tone.");
+		throw EError("Major tone must be at least as large as minor tone.");
 	if (minor < half)
-		throw EGamut().msg(
-				"Minor tone must be at least as large as half tone.");
+		throw EError("Minor tone must be at least as large as half tone.");
 	if (major < 1)
-		EGamut().msg("Major tone must be at least one step.");
+		throw EError("Major tone must be at least one step.");
 	if (minor < 1)
-		EGamut().msg("Minor tone must be at least one step.");
+		throw EError("Minor tone must be at least one step.");
 	if (half < 1)
-		EGamut().msg("Half tone must be at least one step.");
-	const std::array<int, DiatonicNotes + 1> major_steps { { 0, 1, 1, 1, 2, 3,
-			3, 3 } }, minor_steps { { 0, 0, 1, 1, 1, 1, 2, 2 } }, half_steps { {
-			0, 0, 0, 1, 1, 1, 1, 2 } };
+		throw EError("Half tone must be at least one step.");
+	const std::array<int, DiatonicNotes + 1> major_steps { { 0, 1, 1, 1, 2, 3, 3, 3 } },
+		minor_steps { { 0, 0, 1, 1, 1, 1, 2, 2 } }, half_steps { {0, 0, 0, 1, 1, 1, 1, 2 } };
 	std::array<int, DiatonicNotes + 1> steps;
 	note_names_ = StringVector(StandardNames.begin(), StandardNames.end());
-	for (int index = 0; index < DiatonicNotes + 1; index++)
-		steps[index] = major_steps[index] * major + minor_steps[index] * minor
-				+ half_steps[index] * half;
+	key_signature_.resize(note_names_.size());
+	for (size_t index {0}; index < DiatonicNotes + 1; index++)
+		steps[index] = major_steps[index] * major + minor_steps[index] * minor + half_steps[index] * half;
 	pitch_classes_n_ = steps[DiatonicNotes];
-	note_values_ = DoubleVector(steps.begin(), steps.end());
-	StandardAccidentals(static_cast<double>(major) - static_cast<double>(half));
+	note_values_ = FloatVector(steps.begin(), steps.end());
+	StandardAccidentals(static_cast<float_type>(major) - static_cast<float_type>(half));
 	pitches_.assign(pitch_classes_n_, 1.0);
 	return *this;
 }
 
-PitchGamut& PitchGamut::PorcupineNotes(int major, int minor) {
-	const int half = minor * 2 - major;
-	return TwotoneNotes(major, minor, half);
-}
-
-PitchGamut& PitchGamut::MeantoneNotes(int whole, int half) {
+PitchGamut& PitchGamut::MeantoneNotes(size_t whole, size_t half) {
 	if (whole < half)
-		throw EGamut().msg(
-				"Whole tone must be at least as large as half tone.");
+		throw EError("Whole tone must be at least as large as half tone.");
 	if (whole < 1)
-		throw EGamut().msg("Whole tone must be at least one step.");
+		throw EError("Whole tone must be at least one step.");
 	if (half < 1)
-		throw EGamut().msg("Half tone must be at least one step.");
+		throw EError("Half tone must be at least one step.");
 	return TwotoneNotes(whole, whole, half);
 }
 
-PitchGamut& PitchGamut::GeneralNotes(int pitch_classes,
-		DoubleVector note_values, StringVector names, double accidental_size) {
+PitchGamut& PitchGamut::GeneralNotes(size_t pitch_classes,
+		FloatVector note_values, StringVector names, float_type accidental_size) {
 	Clear();
 	if (note_values.size() != names.size())
-		throw EGamut().msg("Note offsets doesn't match note names.");
+		throw EError("Note offsets doesn't match note names.");
 	note_names_ = names;
+	key_signature_.resize(note_names_.size());
 	note_values_ = note_values;
 	pitch_classes_n_ = pitch_classes;
 	if (accidental_size > 0)
@@ -541,9 +528,9 @@ PitchGamut& PitchGamut::GeneralNotes(int pitch_classes,
 	return *this;
 }
 
-PitchGamut& PitchGamut::GeneralET(int pitch_classes, DoubleVector note_values,
-		double accidental_size, double repeat_ratio, StringVector names,
-		std::string standard, double standard_ratio) {
+PitchGamut& PitchGamut::GeneralET(size_t pitch_classes, FloatVector note_values,
+		float_type accidental_size, float_type repeat_ratio, StringVector names,
+		std::string standard, float_type standard_ratio) {
 	GeneralNotes(pitch_classes, note_values, names, accidental_size);
 	pitches_.assign(pitch_classes_n_, 1.0);
 	EqualTemper(repeat_ratio);
@@ -551,110 +538,84 @@ PitchGamut& PitchGamut::GeneralET(int pitch_classes, DoubleVector note_values,
 	return *this;
 }
 
-PitchGamut& PitchGamut::ETWestern(int pitch_classes, DoubleVector note_values,
-		double accidental_size, double repeat_ratio) {
+PitchGamut& PitchGamut::ETWestern(size_t pitch_classes, FloatVector note_values,
+		float_type accidental_size, float_type repeat_ratio) {
 	if (note_values.size() != DiatonicNotes)
-		throw EGamut().msg(
-				"Gamut function requires 7 base notes (internal error).");
+		throw EError("Gamut function requires 7 base notes (internal error).");
 	return GeneralET(pitch_classes, note_values, accidental_size, repeat_ratio,
 			StringVector(StandardNames.begin(), StandardNames.end()));
 }
 
 PitchGamut& PitchGamut::BPLambda() {
-	constexpr int BPDiatonicNotes = 9, BPChromaticNotes = 13;
-	const std::array<std::string, BPDiatonicNotes> name_strings { { "c", "d",
-			"e", "f", "g", "h", "j", "a", "b" } };
-	StringVector names = StringVector(name_strings.begin(), name_strings.end());
-	const std::array<double, BPDiatonicNotes> note_values { { 0, 2, 3, 4, 6, 7,
-			9, 10, 12 } };
+	static constexpr size_t BPDiatonicNotes {9}, BPChromaticNotes {13};
+	static const std::array<std::string, BPDiatonicNotes> name_strings { { "c", "d", "e", "f", "g", "h", "j", "a", "b" } };
+	static StringVector names {StringVector(name_strings.begin(), name_strings.end())};
+	static const std::array<float_type, BPDiatonicNotes> note_values { { 0, 2, 3, 4, 6, 7, 9, 10, 12 } };
 	return GeneralET(BPChromaticNotes,
-			DoubleVector(note_values.begin(), note_values.end()), 1, 3.0, names);
+			FloatVector(note_values.begin(), note_values.end()), 1, 3.0, names);
 }
 
 PitchGamut& PitchGamut::Pelog() {
-	constexpr int PelogDiatonicNotes = 7, PelogChromaticNotes = 9;
-	const std::array<std::string, PelogDiatonicNotes> name_strings { { "ji",
-			"ro", "lu", "pat", "ma", "nem", "pi" } };
-	StringVector names = StringVector(name_strings.begin(), name_strings.end());
-	const std::array<double, PelogDiatonicNotes> note_values { { 0, 1, 2, 4, 5,
-			6, 8 } };
-	return GeneralET(PelogChromaticNotes,
-			DoubleVector(note_values.begin(), note_values.end()), 0, 2.0, names,
-			"ma''''");
+	static constexpr size_t PelogDiatonicNotes {7}, PelogChromaticNotes {9};
+	static const std::array<std::string, PelogDiatonicNotes> name_strings { { "ji", "ro", "lu", "pat", "ma", "nem", "pi" } };
+	static StringVector names {StringVector(name_strings.begin(), name_strings.end())};
+	static const std::array<float_type, PelogDiatonicNotes> note_values { { 0, 1, 2, 4, 5, 6, 8 } };
+	return GeneralET(PelogChromaticNotes, FloatVector(note_values.begin(), note_values.end()), 0, 2.0, names, "ma''''");
 }
 
 PitchGamut& PitchGamut::Slendro() {
-	constexpr int SlendroNotes = 5;
-	const std::array<std::string, SlendroNotes> name_strings { { "ji", "ro",
-			"lu", "ma", "nem" } };
-	StringVector names = StringVector(name_strings.begin(), name_strings.end());
-	const std::array<double, SlendroNotes> note_values { { 0, 1, 2, 3, 4 } };
-	return GeneralET(SlendroNotes,
-			DoubleVector(note_values.begin(), note_values.end()), 0, 2.0, names,
-			"ma''''");
-}
-
-PitchGamut& PitchGamut::WCAlpha_old() {
-	const std::array<double, 7> note_values { { 0, 3, 5, 6, 9, 12, 14 } };
-	return GeneralET(15, DoubleVector(note_values.begin(), note_values.end()),
-			1, pow(1.5, 15.0 / 9.0),
-			StringVector(StandardNames.begin(), StandardNames.end()));
-}
-
-PitchGamut& PitchGamut::WCGamma_old() {
-	const std::array<double, 7> note_values { { 0, 6, 11, 14, 20, 26, 31 } };
-	return GeneralET(34, DoubleVector(note_values.begin(), note_values.end()),
-			2, pow(1.5, 34.0 / 20.0),
-			StringVector(StandardNames.begin(), StandardNames.end()));
+	static constexpr size_t SlendroNotes {5};
+	static const std::array<std::string, SlendroNotes> name_strings { { "ji", "ro", "lu", "ma", "nem" } };
+	static StringVector names = StringVector(name_strings.begin(), name_strings.end());
+	static const std::array<float_type, SlendroNotes> note_values { { 0, 1, 2, 3, 4 } };
+	return GeneralET(SlendroNotes, FloatVector(note_values.begin(), note_values.end()), 0, 2.0, names, "ma''''");
 }
 
 PitchGamut& PitchGamut::WCAlpha() {
-	constexpr double ScaleStep = ((9.0 * log2(3.0 / 2.0) + 5.0 * log2(5.0 / 4.0)
-			+ 4.0 * log2(6.0 / 5.0))) / (9.0 * 9.0 + 5.0 * 5.0 + 4.0 * 4.0),
-			PseudoOctave = pow(2.0, ScaleStep * 15.0);
+	static float_type ScaleStep {((9.0 * log2(3.0 / 2.0) + 5.0 * log2(5.0 / 4.0)
+			+ 4.0 * log2(6.0 / 5.0))) / (9.0 * 9.0 + 5.0 * 5.0 + 4.0 * 4.0)};
+	static const float_type PseudoOctave {pow(2.0_flt, ScaleStep * 15.0_flt)};
 	return TwotoneNotes(3, 2, 1).EqualTemper(PseudoOctave).StandardPitch();
 }
 
 PitchGamut& PitchGamut::WCBeta() {
-	constexpr double ScaleStep = ((11.0 * log2(3.0 / 2.0)
+	static const float_type ScaleStep {((11.0 * log2(3.0 / 2.0)
 			+ 6.0 * log2(5.0 / 4.0) + 5.0 * log2(6.0 / 5.0)))
-			/ (11.0 * 11.0 + 6.0 * 6.0 + 5.0 * 5.0), PseudoOctave = pow(2.0,
-			ScaleStep * 19.0);
+			/ (11.0 * 11.0 + 6.0 * 6.0 + 5.0 * 5.0)};
+	static const float_type PseudoOctave {pow(2.0_flt, ScaleStep * 19.0_flt)};
 	return MeantoneNotes(3, 2).EqualTemper(PseudoOctave).StandardPitch();
 }
 
 PitchGamut& PitchGamut::WCGamma() {
-	constexpr double ScaleStep = ((20.0 * log2(3.0 / 2.0)
+	static const float_type ScaleStep {((20.0 * log2(3.0 / 2.0)
 			+ 11.0 * log2(5.0 / 4.0) + 9.0 * log2(6.0 / 5.0)))
-			/ (20.0 * 20.0 + 11.0 * 11.0 + 9.0 * 9.0), PseudoOctave = pow(2.0,
-			ScaleStep * 34.0);
+			/ (20.0 * 20.0 + 11.0 * 11.0 + 9.0 * 9.0)};
+	static float_type PseudoOctave {pow(2.0_flt, ScaleStep * 34.0_flt)};
 	return TwotoneNotes(6, 5, 3).EqualTemper(PseudoOctave).StandardPitch();
 }
 
 PitchGamut& PitchGamut::TET14() {
-	const std::array<double, 7> note_values { { 0, 2, 4, 6, 8, 10, 12 } };
-	return ETWestern(14, DoubleVector(note_values.begin(), note_values.end()),
-			1);
+	static constexpr std::array<float_type, 7> note_values { { 0, 2, 4, 6, 8, 10, 12 } };
+	return ETWestern(14, FloatVector(note_values.begin(), note_values.end()), 1);
 }
 
 PitchGamut& PitchGamut::TET10() {
-	const std::array<double, 7> note_values { { 0, 2, 4, 4, 6, 8, 8 } };
-	return ETWestern(10, DoubleVector(note_values.begin(), note_values.end()),
-			1);
+	static constexpr std::array<float_type, 7> note_values { { 0, 2, 4, 4, 6, 8, 8 } };
+	return ETWestern(10, FloatVector(note_values.begin(), note_values.end()), 1);
 }
 
-PitchGamut& PitchGamut::Generator(double base, double generator, int step,
-		int start, int count) {
+PitchGamut& PitchGamut::Generator(float_type base, float_type generator, int step, int start, int count) {
 	pitches_[start] = base;
-	for (int index = 0, rank = start; index < count; index++) {
+	int rank {start}, n {static_cast<int>(pitch_classes_n_)};
+	for (size_t index {0}; std::cmp_less(index, count); index++) {
 		rank += step;
 		base *= generator;
-		if (rank >= pitch_classes_n_) {
-			rank -= pitch_classes_n_;
+		if (rank >= n) {
+			rank -= n;
 			base /= 2.0;
 		}
 		if (rank < 0) {
-			rank += pitch_classes_n_;
+			rank += n;
 			base *= 2.0;
 		}
 		pitches_[rank] = base;
@@ -662,62 +623,47 @@ PitchGamut& PitchGamut::Generator(double base, double generator, int step,
 	return *this;
 }
 
-PitchGamut& PitchGamut::Regular(double generator, int step,
-		std::string base_note, double repeat_ratio) {
+PitchGamut& PitchGamut::Regular(float_type generator, int step, std::string base_note, float_type repeat_ratio) {
 	repeat_ratio_ = repeat_ratio;
-	const int start = PitchIndex(base_note), anticlockwise_count =
-			(pitch_classes_n_ - 1) / 2, clockwise_count = pitch_classes_n_ - 1
-			- anticlockwise_count;
+	const int start {static_cast<int>(PitchIndex(base_note))},
+		anticlockwise_count {(static_cast<int>(pitch_classes_n_) - 1) / 2},
+		clockwise_count {static_cast<int>(pitch_classes_n_) - 1 - anticlockwise_count};
 	Generator(1.0, generator, step, start, clockwise_count);
 	Generator(1.0, 1.0 / generator, -step, start, clockwise_count);
 	NormalisePitches();
 	return *this;
 }
 
-bool Coprime(int a, int b) {
-	while (true) {
-		if (!(a %= b))
-			return b == 1;
-		if (!(b %= a))
-			return a == 1;
-	}
-	return false; // this never happens but silences the code parser
-}
-
-PitchGamut& PitchGamut::GeneralRegular(int pitch_classes,
-		DoubleVector note_values, double accidental_size, StringVector names,
-		double generator, int step, std::string base_note, double repeat_ratio,
-		std::string standard_note, double standard_ratio) {
+PitchGamut& PitchGamut::GeneralRegular(size_t pitch_classes,
+		FloatVector note_values, float_type accidental_size, StringVector names,
+		float_type generator, int step, std::string base_note, float_type repeat_ratio,
+		std::string standard_note, float_type standard_ratio) {
 	GeneralNotes(pitch_classes, note_values, names, accidental_size);
 	Regular(generator, step, base_note, repeat_ratio);
 	StandardPitch(standard_note, standard_ratio);
 	return *this;
 }
 
-PitchGamut& PitchGamut::MeantoneRegular(double generator, std::string base_note,
-		double repeat_ratio) {
-	int step = PitchIndex("g") - PitchIndex("c");
-	if (!Coprime(pitch_classes_n_, step))
-		throw EGamut().msg(
-				"The meantone regular function requires the octave/fifth steps counts to be coprime.");
+PitchGamut& PitchGamut::MeantoneRegular(float_type generator, std::string base_note, float_type repeat_ratio) {
+	int step {static_cast<int>(PitchIndex("g") - PitchIndex("c"))};
+	if (std::gcd(pitch_classes_n_, step) != 1)
+		throw EError("The meantone regular function requires the octave/fifth steps counts to be coprime.");
 	Regular(generator, step, base_note, repeat_ratio);
 	StandardPitch();
 	return *this;
 }
 
-PitchGamut& PitchGamut::RegularWestern(int pitch_classes,
-		DoubleVector note_values, double accidental_size, double generator,
+PitchGamut& PitchGamut::RegularWestern(size_t pitch_classes,
+		FloatVector note_values, float_type accidental_size, float_type generator,
 		int step, std::string base_note) {
 	if (note_values.size() != 7)
-		throw EGamut().msg(
-				"Gamut function requires 7 base notes (internal error).");
+		throw EError("Gamut function requires 7 base notes (internal error).");
 	return GeneralRegular(pitch_classes, note_values, accidental_size,
 			StringVector(StandardNames.begin(), StandardNames.end()), generator,
 			step, base_note, 2.0, "a''''", 1.0);
 }
 
-PitchGamut& PitchGamut::General12(DoubleVector pitch_table,
-		std::string base_note) {
+PitchGamut& PitchGamut::General12(FloatVector pitch_table, std::string base_note) {
 	MeantoneNotes(2, 1);
 	repeat_ratio_ = 2.0;
 	pitches_ = pitch_table;
@@ -727,19 +673,19 @@ PitchGamut& PitchGamut::General12(DoubleVector pitch_table,
 }
 
 PitchGamut& PitchGamut::Harmonic12(std::string base_note) {
-	const std::array<double, ChromaticNotes> pitch_table { { 1.0, 17.0 / 16.0,
+	static constexpr std::array<float_type, ChromaticNotes> pitch_table { { 1.0, 17.0 / 16.0,
 			9.0 / 8.0, 19.0 / 16.0, 5.0 / 4.0, 11.0 / 8.0, 23.0 / 16.0, 3.0
-					/ 2.0, 13.0 / 8.0, 27.0 / 16.0, 7.0 / 4.0, 15.0 / 8.0 } };
-	return General12(DoubleVector(pitch_table.begin(), pitch_table.end()),
+			/ 2.0, 13.0 / 8.0, 27.0 / 16.0, 7.0 / 4.0, 15.0 / 8.0 } };
+	return General12(FloatVector(pitch_table.begin(), pitch_table.end()),
 			base_note);
 }
 
 PitchGamut& PitchGamut::Ptolemy12(std::string base_note) {
-	const std::array<double, ChromaticNotes> pitch_table { { 1.0, 16.0 / 15.0,
+	static constexpr std::array<float_type, ChromaticNotes> pitch_table { { 1.0, 16.0 / 15.0,
 			9.0 / 8.0, 6.0 / 5.0, 5.0 / 4.0, 4.0 / 3.0, 45.0 / 32.0, 3.0 / 2.0,
 			8.0 / 5.0, 5.0 / 3.0, 16.0 / 9.0, 15.0 / 8.0 } };
-	return General12(DoubleVector(pitch_table.begin(), pitch_table.end()),
+	return General12(FloatVector(pitch_table.begin(), pitch_table.end()),
 			base_note);
 }
 
-}
+} //end namespace BoxyLady
